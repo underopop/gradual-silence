@@ -19,13 +19,13 @@ io.on('connection', (socket) => {
     });
 
     socket.on('join-room', (data) => {
-        const { roomId, playerName } = data;
+        const { roomId, playerName, playerIcon } = data;
         if (!rooms[roomId]) { socket.emit('error-msg', 'その部屋は存在しません。'); return; }
         const room = rooms[roomId];
         if (room.gameStarted) { socket.emit('error-msg', 'このゲームは既に開始されています。'); return; }
 
         const isHost = room.players.length === 0;
-        const newPlayer = { id: socket.id, name: playerName, isHost: isHost, role: null, isAlive: true };
+        const newPlayer = { id: socket.id, name: playerName, icon: playerIcon, isHost: isHost, role: null, isAlive: true };
         room.players.push(newPlayer);
         socket.join(roomId);
         io.to(roomId).emit('room-info', { config: room.config, players: room.players });
@@ -44,11 +44,11 @@ io.on('connection', (socket) => {
             turnIndex: 0,
             logs: [],
             votes: {},
-            nightTargetId: null,       
+            nightTargetId: null,      
             nightSeerTargetId: null,   
             nightKnightTargetId: null, 
-            nightRooms: {},            
-            roomLogs: {},              
+            nightRooms: {},           
+            roomLogs: {},             
             lastExecuted: null,
             confirmedDaybreakUsers: [],
             nightTimer: null
@@ -85,11 +85,9 @@ io.on('connection', (socket) => {
     socket.on('confirm-role', (roomId) => {
         const room = rooms[roomId];
         if (!room || !room.gameData) return;
-
         if (!room.gameData.confirmedPlayers.includes(socket.id)) {
             room.gameData.confirmedPlayers.push(socket.id);
         }
-
         if (room.gameData.confirmedPlayers.length === Number(room.config.players)) {
             room.gameData.phase = 'day';
             sendNextTurn(roomId);
@@ -100,10 +98,8 @@ io.on('connection', (socket) => {
         const { roomId, message } = data;
         const room = rooms[roomId];
         if (!room || !room.gameData) return;
-
         const player = room.players.find(p => p.id === socket.id);
         room.gameData.logs.push(`👤 ${player.name}: ${message}`);
-
         room.gameData.turnIndex++;
         sendNextTurn(roomId);
     });
@@ -112,7 +108,6 @@ io.on('connection', (socket) => {
         const { roomId, targetId } = data;
         const room = rooms[roomId];
         if (!room || !room.gameData) return;
-
         if (room.gameData.votes[socket.id]) return;
         room.gameData.votes[socket.id] = targetId;
 
@@ -122,7 +117,6 @@ io.on('connection', (socket) => {
         if (voteCount === aliveCount) {
             const tally = {};
             room.players.forEach(p => tally[p.id] = 0);
-
             Object.values(room.gameData.votes).forEach(tId => { tally[tId]++; });
 
             let maxVotes = -1;
@@ -133,28 +127,13 @@ io.on('connection', (socket) => {
 
             const executedPlayer = room.players.find(p => p.id === executedId);
             executedPlayer.isAlive = false; 
-
-            room.gameData.lastExecuted = {
-                name: executedPlayer.name,
-                role: executedPlayer.role,
-                day: room.gameData.day
-            };
+            room.gameData.lastExecuted = { name: executedPlayer.name, role: executedPlayer.role, day: room.gameData.day };
 
             const winner = checkVictory(room);
             if (winner) {
-                io.to(roomId).emit('game-event', {
-                    type: 'game-over',
-                    winner: winner,
-                    executedName: executedPlayer.name,
-                    executedRole: executedPlayer.role, 
-                    players: room.players
-                });
+                io.to(roomId).emit('game-event', { type: 'game-over', winner: winner, executedName: executedPlayer.name, executedRole: executedPlayer.role, players: room.players });
             } else {
-                io.to(roomId).emit('game-event', {
-                    type: 'vote-result',
-                    executedName: executedPlayer.name,
-                    executedRole: '???' 
-                });
+                io.to(roomId).emit('game-event', { type: 'vote-result', executedName: executedPlayer.name, executedRole: '???' });
             }
         }
     });
@@ -162,43 +141,27 @@ io.on('connection', (socket) => {
     socket.on('to-night-phase', (roomId) => {
         const room = rooms[roomId];
         if (!room || !room.gameData) return;
-
         room.gameData.phase = 'night-part1'; 
         room.gameData.nightRooms = {};       
         room.gameData.roomLogs = {};         
         room.gameData.nightTargetId = null;
         room.gameData.nightSeerTargetId = null;
         room.gameData.nightKnightTargetId = null;
+        room.players.forEach(p => { room.gameData.roomLogs[p.id] = []; });
 
-        room.players.forEach(p => {
-            room.gameData.roomLogs[p.id] = [];
-        });
-
-        io.to(roomId).emit('game-event', {
-            type: 'go-to-night-part1',
-            players: room.players,
-            nightTime: room.config.nightTime
-        });
-
+        io.to(roomId).emit('game-event', { type: 'go-to-night-part1', players: room.players, nightTime: room.config.nightTime });
         if (room.gameData.nightTimer) { clearInterval(room.gameData.nightTimer); }
 
         let timeLeft = Number(room.config.nightTime);
         io.to(roomId).emit('night-timer-tick', timeLeft);
-
         room.gameData.nightTimer = setInterval(() => {
             timeLeft--;
             io.to(roomId).emit('night-timer-tick', timeLeft);
-
             if (timeLeft <= 0) {
                 clearInterval(room.gameData.nightTimer);
                 room.gameData.nightTimer = null;
-                
                 room.gameData.phase = 'night-part2';
-                io.to(roomId).emit('game-event', {
-                    type: 'go-to-night-part2',
-                    players: room.players
-                });
-                console.log(`🔮 部屋 [${roomId}] 前半終了。後半の役職フェーズへ自動移行。`);
+                io.to(roomId).emit('game-event', { type: 'go-to-night-part2', players: room.players });
             }
         }, 1000);
     });
@@ -206,33 +169,12 @@ io.on('connection', (socket) => {
     socket.on('select-night-room', (data) => {
         const { roomId, targetRoom } = data;
         const room = rooms[roomId];
-        if (!room || !room.gameData) return;
-        
-        // ★変更点①：すでに今夜部屋を選んでいるプレイヤーからの通信ならサーバー側でも弾く（超頑丈ガード）
-        if (room.gameData.nightRooms[socket.id]) return;
-
+        if (!room || !room.gameData || room.gameData.nightRooms[socket.id]) return;
         const player = room.players.find(p => p.id === socket.id);
         if (!player || !player.isAlive) return;
 
         room.gameData.nightRooms[socket.id] = targetRoom;
-
-        let displayName = 'シャワー室';
-        if (targetRoom === 'hill') displayName = '丘';
-        if (targetRoom === 'dining') displayName = 'ダイニング';
-        if (targetRoom.startsWith('room_')) {
-            const hostP = room.players.find(x => x.id === targetRoom.replace('room_', ''));
-            displayName = hostP ? `${hostP.name} の自室` : '誰かの自室';
-        }
-
-        socket.emit('night-room-joined', { roomKey: targetRoom, roomName: displayName });
-
-        room.players.forEach(p => {
-            if (room.gameData.nightRooms[p.id] === targetRoom) {
-                io.to(p.id).emit('night-chat-receive', {
-                    message: `<span style="color:#aaa; font-style:italic;">【システム】${player.name} さんが入室しました。</span>`
-                });
-            }
-        });
+        socket.emit('night-room-joined', { roomKey: targetRoom, roomName: '部屋移動完了' });
     });
 
     socket.on('send-night-chat', (data) => {
@@ -240,43 +182,26 @@ io.on('connection', (socket) => {
         const room = rooms[roomId];
         if (!room || !room.gameData) return;
         const player = room.players.find(p => p.id === socket.id);
-        if (!player || !player.isAlive) return;
-
         const currentRoom = room.gameData.nightRooms[socket.id];
-        if (!currentRoom) return;
+        if (!player || !player.isAlive || !currentRoom) return;
 
         room.players.forEach(p => {
             if (p.isAlive && room.gameData.nightRooms[p.id] === currentRoom) {
-                io.to(p.id).emit('night-chat-receive', {
-                    message: `👤 <strong>${player.name}</strong>: ${message}`
-                });
+                io.to(p.id).emit('night-chat-receive', { message: `👤 <strong>${player.name}</strong>: ${message}` });
             }
         });
-
         if (currentRoom.startsWith('room_')) {
             const targetId = currentRoom.replace('room_', '');
-            if (room.gameData.roomLogs[targetId]) {
-                room.gameData.roomLogs[targetId].push(`👤 <strong>${player.name}</strong>: ${message}`);
-            }
+            if (room.gameData.roomLogs[targetId]) { room.gameData.roomLogs[targetId].push(`👤 <strong>${player.name}</strong>: ${message}`); }
         }
     });
 
-    // ★大改造：人狼の襲撃処理（ロック機能付き）
     socket.on('submit-kill', (data) => {
         const { roomId, targetId } = data;
         const room = rooms[roomId];
-        if (!room || !room.gameData) return;
-
-        // ★変更点②：すでに誰か人狼が襲撃先を決めていたら、2人目の人狼のクリックは完全無視！
-        if (room.gameData.nightTargetId !== null) return;
-
+        if (!room || !room.gameData || room.gameData.nightTargetId !== null) return;
         room.gameData.nightTargetId = targetId;
-        
-        // 即座に部屋の全員（特に相方の人狼）へ「人狼の襲撃先がロックされたぞ！」と通知を送る
-        io.to(roomId).emit('game-event', {
-            type: 'werewolf-kill-fixed'
-        });
-
+        io.to(roomId).emit('game-event', { type: 'werewolf-kill-fixed' });
         checkNightActionsComplete(room, roomId);
     });
 
@@ -284,21 +209,11 @@ io.on('connection', (socket) => {
         const { roomId, targetId } = data;
         const room = rooms[roomId];
         if (!room || !room.gameData) return;
-
         room.gameData.nightSeerTargetId = targetId;
         const target = room.players.find(p => p.id === targetId);
-
         if (target.role !== '宇宙人') {
-            const judgeRole = target.role === '人狼' ? '人狼' : '村人';
-            socket.emit('divine-result', {
-                day: room.gameData.day,
-                targetName: target.name,
-                targetRole: judgeRole
-            });
-        } else {
-            console.log(`🔮 占い師が宇宙人 [${target.name}] を占いました。ルールにより、結果は通知されません。`);
+            socket.emit('divine-result', { day: room.gameData.day, targetName: target.name, targetRole: target.role === '人狼' ? '人狼' : '村人' });
         }
-
         checkNightActionsComplete(room, roomId);
     });
 
@@ -306,7 +221,6 @@ io.on('connection', (socket) => {
         const { roomId, targetId } = data;
         const room = rooms[roomId];
         if (!room || !room.gameData) return;
-
         room.gameData.nightKnightTargetId = targetId;
         checkNightActionsComplete(room, roomId);
     });
@@ -314,62 +228,36 @@ io.on('connection', (socket) => {
     socket.on('progress-to-daybreak', (roomId) => {
         const room = rooms[roomId];
         if (!room || !room.gameData) return;
-
         let killedName = 'なし';
         let alienDisappeared = false;
-
         const victim = room.players.find(p => p.id === room.gameData.nightTargetId);
         const protectedPlayer = room.players.find(p => p.id === room.gameData.nightKnightTargetId);
 
         if (victim) {
-            if (protectedPlayer && victim.id === protectedPlayer.id) {
-                console.log(`🛡️ 騎士の守護成功！ ${victim.name} への襲撃を阻止しました。`);
-            } 
-            else if (victim.role === '宇宙人') {
-                console.log(`👽 宇宙人特性！ ${victim.name} は襲撃されましたが傷一つ負いません。`);
-            } 
-            else {
+            if (!(protectedPlayer && victim.id === protectedPlayer.id) && victim.role !== '宇宙人') {
                 victim.isAlive = false;
                 killedName = victim.name;
             }
         }
-
         const seerTarget = room.players.find(p => p.id === room.gameData.nightSeerTargetId);
         if (seerTarget && seerTarget.isAlive && seerTarget.role === '宇宙人') {
             seerTarget.isAlive = false;
             alienDisappeared = true;
-            console.log(`🔮 宇宙人消滅！ ${seerTarget.name} は占い師に見破られて消え去りました。`);
         }
 
         room.gameData.phase = 'daybreak';
         room.gameData.confirmedDaybreakUsers = [];
-
         const winner = checkVictory(room);
-
         room.players.forEach(p => {
-            io.to(p.id).emit('game-event', {
-                type: 'go-to-daybreak',
-                victimName: killedName,
-                alienDisappeared: alienDisappeared,
-                isGameOver: winner !== null,
-                winner: winner,
-                players: room.players,
-                lastExecuted: room.gameData.lastExecuted,
-                myRoomLog: room.gameData.roomLogs[p.id] || [] 
-            });
+            io.to(p.id).emit('game-event', { type: 'go-to-daybreak', victimName: killedName, alienDisappeared: alienDisappeared, isGameOver: winner !== null, winner: winner, players: room.players, lastExecuted: room.gameData.lastExecuted, myRoomLog: room.gameData.roomLogs[p.id] || [] });
         });
     });
 
     socket.on('confirm-daybreak', (roomId) => {
         const room = rooms[roomId];
         if (!room || !room.gameData) return;
-
-        if (!room.gameData.confirmedDaybreakUsers.includes(socket.id)) {
-            room.gameData.confirmedDaybreakUsers.push(socket.id);
-        }
-
+        if (!room.gameData.confirmedDaybreakUsers.includes(socket.id)) room.gameData.confirmedDaybreakUsers.push(socket.id);
         const aliveCount = room.players.filter(p => p.isAlive).length;
-
         if (room.gameData.confirmedDaybreakUsers.length === aliveCount) {
             room.gameData.day++;
             room.gameData.currentRound = 1;
@@ -377,7 +265,6 @@ io.on('connection', (socket) => {
             room.gameData.logs = [];
             room.gameData.votes = {};
             room.gameData.phase = 'day';
-
             sendNextTurn(roomId);
         }
     });
@@ -388,10 +275,7 @@ io.on('connection', (socket) => {
         if (!room) return;
         const player = room.players.find(p => p.id === socket.id);
         if (!player || player.isAlive) return;
-
-        room.players.forEach(p => {
-            if (!p.isAlive) { io.to(p.id).emit('ghost-chat-receive', { name: player.name, message: message }); }
-        });
+        room.players.forEach(p => { if (!p.isAlive) { io.to(p.id).emit('ghost-chat-receive', { name: player.name, message: message }); } });
     });
 
     socket.on('disconnect', () => { console.log(' プレイヤーが画面を閉じました。'); });
@@ -402,12 +286,9 @@ function checkNightActionsComplete(room, roomId) {
     const hasAliveWerewolf = alivePlayers.some(p => p.role === '人狼');
     const hasAliveSeer = alivePlayers.some(p => p.role === '占い師');
     const hasAliveKnight = alivePlayers.some(p => p.role === '騎士');
-
-    let werewolfDone = !hasAliveWerewolf || room.gameData.nightTargetId !== null;
-    let seerDone = !hasAliveSeer || room.gameData.nightSeerTargetId !== null;
-    let knightDone = !hasAliveKnight || room.gameData.nightKnightTargetId !== null;
-
-    if (werewolfDone && seerDone && knightDone) {
+    if ((!hasAliveWerewolf || room.gameData.nightTargetId !== null) && 
+        (!hasAliveSeer || room.gameData.nightSeerTargetId !== null) && 
+        (!hasAliveKnight || room.gameData.nightKnightTargetId !== null)) {
         io.to(roomId).emit('game-event', { type: 'night-choice-complete' });
     }
 }
@@ -416,46 +297,30 @@ function checkVictory(room) {
     const alivePlayers = room.players.filter(p => p.isAlive);
     const alienCount = alivePlayers.filter(p => p.role === '宇宙人').length;
     const werewolfCount = alivePlayers.filter(p => p.role === '人狼').length;
-    
-    const othersCount = alivePlayers.length - alienCount; 
-    const citizenCount = alivePlayers.length - werewolfCount; 
-
-    if (alienCount > 0 && alienCount >= othersCount) { return 'alien'; }
+    const othersCount = alivePlayers.length - alienCount;
+    const citizenCount = alivePlayers.length - werewolfCount;
+    if (alienCount > 0 && alienCount >= othersCount) return 'alien';
     if (werewolfCount === 0) return 'villager';
     if (werewolfCount >= citizenCount) return 'werewolf';
-    
     return null;
 }
 
 function sendNextTurn(roomId) {
     const room = rooms[roomId];
     const alivePlayers = room.players.filter(p => p.isAlive);
-
     if (room.gameData.turnIndex >= alivePlayers.length) {
-        room.gameData.turnIndex = 0;     
-        room.gameData.currentRound++;    
+        room.gameData.turnIndex = 0;
+        room.gameData.currentRound++;
     }
-
     if (room.gameData.currentRound > Number(room.config.rounds)) {
         room.gameData.phase = 'vote';
-        room.gameData.logs.push(`🚨 【システム】話し合いの制限ラウンドに達しました。投票フェーズに移ります。`);
-        room.gameData.votes = {};
         io.to(roomId).emit('game-event', { type: 'go-to-vote', gameData: room.gameData });
         return;
     }
-
     const currentSpeaker = alivePlayers[room.gameData.turnIndex];
-    io.to(roomId).emit('discussion-start', {
-        gameData: room.gameData,
-        players: room.players, 
-        speakerName: currentSpeaker.name,
-        speakerId: currentSpeaker.id
-    });
+    io.to(roomId).emit('discussion-start', { gameData: room.gameData, players: room.players, speakerName: currentSpeaker.name, speakerId: currentSpeaker.id });
 }
 
-/* ─── ★心臓コード、今回も1文字のズレなく完全合体！ ─── */
 http.listen(PORT, () => {
-    console.log(`==================================================`);
-    console.log(` 人狼ゲームサーバーが起動しました！`);
-    console.log(`==================================================`);
+    console.log(`サーバーが起動しました！`);
 });

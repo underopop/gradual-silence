@@ -130,6 +130,10 @@
         </div>
         <div id="join-form">
             <input type="text" id="player-name" class="input-name" placeholder="プレイヤー名を入力" maxlength="10">
+    
+            <div style="margin: 10px 0; color: #aaa; font-size: 13px;">アイコン選択:</div>
+            <div id="icon-options" style="display: flex; gap: 5px; justify-content: center; margin-bottom: 15px;"></div>
+            <input type="hidden" id="selected-icon" value="👤">
             <button class="btn-submit" onclick="joinRoom()">部屋に参加する</button>
         </div>
         <div id="room-status" style="display: none;">
@@ -153,7 +157,7 @@
 
     <!-- 【画面D】昼の話し合い画面 -->
     <div id="discussion-screen" style="display: none;">
-        <div class="phase-banner">☀️ 昼の議論 (<span id="display-day">1</span>日目・<span id="display-round">1</span>ラウンド目)</div>
+        <div class="phase-banner">☀️ 昼 of 議論 (<span id="display-day">1</span>日目・<span id="display-round">1</span>ラウンド目)</div>
         <div class="speaker-box" id="speaker-banner">〇〇さんの発言ターン</div>
         <div class="chat-log-area" id="chat-log"></div>
         <div class="command-zone" id="command-zone">
@@ -356,6 +360,28 @@
     let investigationRecords = []; 
     let allMyRoomLogs = []; 
 
+    // ★追加：ページ読み込み時に自動で絵文字のアイコン選択ボタンを作る処理
+    const icons = ['👤', '🐺', '🔮', '🛡️', '👾', '🕵️', '🤖', '💀'];
+    const iconArea = document.getElementById('icon-options');
+    const iconInput = document.getElementById('selected-icon');
+
+    if (iconArea && iconInput) {
+        icons.forEach(icon => {
+            const btn = document.createElement('button');
+            btn.className = 'btn-cmd';
+            btn.style.padding = '5px 10px';
+            btn.style.margin = '0';
+            btn.innerText = icon;
+            btn.onclick = () => {
+                // 他のアイコンボタンの枠線（ハイライト）をリセットして、選んだものだけ赤くする
+                document.querySelectorAll('#icon-options .btn-cmd').forEach(b => b.style.borderColor = '#666');
+                btn.style.borderColor = '#ff4d4d';
+                iconInput.value = icon; // 隠し項目に選んだ絵文字をセット
+            };
+            iconArea.appendChild(btn);
+        });
+    }
+
     const path = window.location.pathname;
     if (path.startsWith('/room/')) {
         currentRoomId = path.split('/')[2];
@@ -403,8 +429,16 @@
 
     function submitSettings() { socket.emit('create-room', config); document.getElementById('submit-btn').disabled = true; document.getElementById('submit-btn').innerText = "作成中..."; }
     socket.on('room-created', (roomId) => { const roomUrl = window.location.origin + "/room/" + roomId; document.getElementById('room-url').value = roomUrl; document.getElementById('go-to-room-btn').href = "/room/" + roomId; document.getElementById('link-area').style.display = 'block'; document.getElementById('lobby-url-display').value = roomUrl; });
-    function joinRoom() { const name = document.getElementById('player-name').value.trim(); if (!name) { alert('名前を入力してください！'); return; } socket.emit('join-room', { roomId: currentRoomId, playerName: name }); }
+    
+    // ★修正：参加ボタンを押したとき、選んだ絵文字（icon）もセットでサーバーへ送るようにしました
+    function joinRoom() { 
+        const name = document.getElementById('player-name').value.trim(); 
+        const icon = document.getElementById('selected-icon').value;
+        if (!name) { alert('名前を入力してください！'); return; } 
+        socket.emit('join-room', { roomId: currentRoomId, playerName: name, playerIcon: icon }); 
+    }
 
+    // ★修正：サーバーからリストが届いたとき、固定の「👤」ではなく、各自が選んだアイコン（p.icon）を画面に出すようにしました
     socket.on('room-info', (data) => {
         document.getElementById('join-form').style.display = 'none';
         document.getElementById('room-status').style.display = 'block';
@@ -412,7 +446,9 @@
         document.getElementById('max-count').innerText = data.config.players;
         const listDiv = document.getElementById('player-list'); listDiv.innerHTML = ""; amIHost = false;
         data.players.forEach(p => { 
-            const item = document.createElement('div'); item.className = 'player-item'; item.innerHTML = `<span>👤 ${p.name}</span>`; 
+            const item = document.createElement('div'); item.className = 'player-item'; 
+            // ↓ ここで p.icon（なければ初期値👤）を表示させています！
+            item.innerHTML = `<span>${p.icon || '👤'} ${p.name}</span>`; 
             if (p.isHost) { item.innerHTML += `<span class="host-badge">ホスト</span>`; if (p.id === socket.id) { amIHost = true; } } 
             listDiv.appendChild(item); 
         });
