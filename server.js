@@ -47,8 +47,8 @@ io.on('connection', (socket) => {
             nightTargetId: null,      
             nightSeerTargetId: null,   
             nightKnightTargetId: null, 
-            nightRooms: {},           
-            roomLogs: {},             
+            nightRooms: {},            
+            roomLogs: {},              
             lastExecuted: null,
             confirmedDaybreakUsers: [],
             nightTimer: null
@@ -143,7 +143,7 @@ io.on('connection', (socket) => {
         if (!room || !room.gameData) return;
         room.gameData.phase = 'night-part1'; 
         room.gameData.nightRooms = {};       
-        room.gameData.roomLogs = {};         
+        room.gameData.roomLogs = {};        
         room.gameData.nightTargetId = null;
         room.gameData.nightSeerTargetId = null;
         room.gameData.nightKnightTargetId = null;
@@ -205,15 +205,18 @@ io.on('connection', (socket) => {
         checkNightActionsComplete(room, roomId);
     });
 
+    // 占い師の処理を修正しました
     socket.on('submit-divine', (data) => {
         const { roomId, targetId } = data;
         const room = rooms[roomId];
         if (!room || !room.gameData) return;
         room.gameData.nightSeerTargetId = targetId;
         const target = room.players.find(p => p.id === targetId);
-        if (target.role !== '宇宙人') {
-            socket.emit('divine-result', { day: room.gameData.day, targetName: target.name, targetRole: target.role === '人狼' ? '人狼' : '村人' });
-        }
+        
+        // 修正箇所：宇宙人なら「人間ではない」、それ以外なら役職名を表示する
+        let roleResult = (target.role === '宇宙人') ? '人間ではない' : target.role;
+        socket.emit('divine-result', { day: room.gameData.day, targetName: target.name, targetRole: roleResult });
+        
         checkNightActionsComplete(room, roomId);
     });
 
